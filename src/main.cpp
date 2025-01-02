@@ -1,26 +1,74 @@
 #include <M5StickC.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
 
-float gyroX, gyroY, gyroZ;
+// WiFi 设置
+const char* ssid = "wifi@lsong.one";
+const char* password = "song940@163.com";
 
-void setup()
-{
-  M5.begin();
-  M5.IMU.Init();
-  M5.Lcd.fillScreen(BLACK);
-  M5.Lcd.setRotation(3);
-  M5.Lcd.setTextSize(1);
-  M5.Lcd.println("Hello world!");
+// MQTT Broker 设置
+const char* mqtt_server = "192.168.2.100";
+const int mqtt_port = 1883;
+const char* mqtt_topic = "esp8266-relay-220v";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+bool buttonState = false;
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    if (client.connect("m5stick")) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      delay(5000);
+    }
+  }
 }
 
+void setup() {
+  M5.begin();
+  M5.Lcd.setRotation(3);
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setTextSize(2);
+  
+  Serial.println("Connecting to WiFi...");
+  
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  client.setServer(mqtt_server, mqtt_port);
+}
 
-void loop()
-{
-  M5.Lcd.setCursor(0, 10, 2);
-  M5.Rtc.GetBm8563Time();
-  M5.Lcd.printf("%02d:%02d:%02d\n", M5.Rtc.Hour, M5.Rtc.Minute, M5.Rtc.Second);
-  M5.IMU.getGyroData(&gyroX, &gyroY, &gyroZ);
-  M5.Lcd.printf("X:%7.2f\n", gyroX);
-  M5.Lcd.printf("Y:%7.2f\n", gyroY);
-  M5.Lcd.printf("Z:%7.2f\n", gyroZ);
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+  M5.update();
+  if (M5.BtnA.wasPressed()) {
+    buttonState = !buttonState;
+    
+    if (buttonState) {
+      client.publish(mqtt_topic, "relay1on");
+      M5.Lcd.fillScreen(BLACK);
+      M5.Lcd.setCursor(10, 30);
+      M5.Lcd.print("Status: ON");
+    } else {
+      client.publish(mqtt_topic, "relay1off");
+      M5.Lcd.fillScreen(BLACK);
+      M5.Lcd.setCursor(10, 30);
+      M5.Lcd.print("Status: OFF");
+    }
+  }
   delay(100);
 }
